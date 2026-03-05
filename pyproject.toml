@@ -3,7 +3,7 @@ name = "proofofaction"
 version = "0.1.0"
 description = "A FastAPI project for Proof of Action"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "fastapi>=0.110.0",
     "uvicorn>=0.28.0",
