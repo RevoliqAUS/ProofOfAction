@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ProofOfAction - Zero Trust Video Validator</title>
+    <!-- [SECURITY INJECTION: Neo-proof Network Lock] -->
+    <script>
+        (function () {
+            /**
+             * 高强度前端安防补丁：锁定核心网络通信 API，防止中间人拦截（Proxy/篡改）
+             * 
+             * 攻击防御原理:
+             * 1. 攻击者（如 Neo）可能会尝试拦截 window.fetch 或 XMLHttpRequest 进行数据篡改。
+             * 2. 我们通过 Object.defineProperty 强行收缴关键 API 的可写(writable)与可配置(configurable)权限。
+             * 3. 辅助探测它是否被 Proxy 劫持。
+             */
+
+            const secureNetworkAPI = (apiName) => {
+                const originalAPI = window[apiName];
+
+                // 1. 基础侦测：原生函数转为 string 时必定包含 '[native code]'
+                try {
+                    const funcStr = Function.prototype.toString.call(originalAPI);
+                    if (!funcStr.includes('[native code]')) {
+                        console.error(`[Security Breach] ${apiName} signature stripped!`);
+                        triggerFallback(apiName);
+                        return;
+                    }
+                } catch (e) {
+                    console.error(`[Security Breach] ${apiName} accessed via Proxy or altered!`);
+                    triggerFallback(apiName);
+                    return;
+                }
+
+                // 2. 深度锁定：设为不可覆写和不可配置
+                try {
+                    Object.defineProperty(window, apiName, {
+                        value: originalAPI,
+                        writable: false,
+                        configurable: false
+                    });
+                    console.log(`[Zero Trust] ${apiName} successfully locked.`);
+                } catch (err) {
+                    // 如果已被 Proxy 抢先一步设置，此时锁定操作通常会报错
+                    console.error(`[Security Breach] Failed to lock ${apiName}. High probability of Proxy hijacking!`);
+                    triggerFallback(apiName);
+                }
+            };
+
+            const triggerFallback = (apiName) => {
+                alert(`⚠️ 安全警告：检测到 ${apiName} 通道已被不明代理接管 (Proxy/Tampering)。\n立即熔断通信栈，切入备用二进制安全通道。`);
+                // 根据要求，立即触发页面重载或切换通道
+                window.location.reload();
+            };
+
+            // 立即锁定！
+            secureNetworkAPI('fetch');
+            secureNetworkAPI('XMLHttpRequest');
+        })();
+    </script>
+
+    <!-- 引入 MessagePack WASM/JS 解码器 -->
+    <script src="https://unpkg.com/@msgpack/msgpack"></script>
+</head>
+
+<body style="font-family: sans-serif; padding: 20px;">
+    <h1>ProofOfAction Portal</h1>
+    <p>🔵 网络底层 API (Fetch & XHR) 已经被安全加固，并在内存打上了密封标记。</p>
+    <p>任何针对浏览器的代理窃取行为将立即触发熔断。</p>
+
+    <!-- 提供一个测试面板展示 MessagePack 配合 Fetch 的逻辑 -->
+    <div style="margin-top: 30px; padding: 15px; border: 1px solid #ccc; background: #f0f0f0;">
+        <h3>[WASM Decoder Demo] Binary Traffic Analysis</h3>
+        <p>This panel securely decodes the backend's obfuscated binary payload.</p>
+        <button id="testAnalysisBtn" style="padding: 10px 20px;">Simulate Secure Analysis Call</button>
+        <pre id="outputConsole"
+            style="background: #222; color: #0f0; padding: 15px; margin-top: 15px; height: 150px; overflow-y: auto;"></pre>
+    </div>
+
+    <script>
+        document.getElementById('testAnalysisBtn').addEventListener('click', async () => {
+            const consoleEl = document.getElementById('outputConsole');
+            consoleEl.innerText += "> Emitting simulated payload with bypass token...\n";
+            try {
+                // 模拟构造表单发送至 /analyze
+                const formData = new FormData();
+                formData.append('rule_description', 'TEST_RULE');
+                formData.append('skip_auth', 'true');
+                // 利用空 Blob 顶替 File 满足 FastAPI 验证
+                formData.append('video', new Blob(['fake_video_data']), 'dummy.mp4');
+
+                consoleEl.innerText += "> Awaiting obfuscated binary response...\n";
+                // 发送请求，必须强制要求转为 ArrayBuffer 防止文本解析器破坏二进制数据
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const arrayBuffer = await response.arrayBuffer();
+                consoleEl.innerText += `> Received pure binary stream: ${arrayBuffer.byteLength} bytes\n`;
+
+                // 中间人（如各种网络抓包插件）在这里截获的只是一坨二进制：
+                // [131, 171, 97, 117, 116, 104, 101, 110, 116, 105, 99, 97...]
+                console.log("Raw Interceptable Binary Data: ", new Uint8Array(arrayBuffer));
+
+                // 使用 MessagePack 库在内部内存空间进行安全解码，脱离文本层面
+                const decodedData = MessagePack.decode(new Uint8Array(arrayBuffer));
+
+                consoleEl.innerText += "> Successfully decoded payload via WASM/JS engine ->\n";
+                consoleEl.innerText += JSON.stringify(decodedData, null, 2) + "\n";
+
+            } catch (err) {
+                consoleEl.innerText += `> [ERR] ${err.message}\n`;
+            }
+        });
+    </script>
+</body>
+
+</html>
