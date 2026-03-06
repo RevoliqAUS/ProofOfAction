@@ -1,3 +1,4 @@
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware  # <--- 新增导入
@@ -20,6 +21,15 @@ app = FastAPI(
     title="ProofOfAction",
     description="基于 AI + 区块链的 0 信任视频裁判协议",
     version="1.0.0",
+)
+
+# 注意：这几行是顶格写（或者是跟 app = FastAPI 对齐的）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 允许任何地方（包括你的本地网页）访问
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- 核心补丁：允许跨域访问 ---
