@@ -1,4 +1,10 @@
 {
+  "builds": [
+    {
+      "src": "api/analyze.py",
+      "use": "@vercel/python"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
