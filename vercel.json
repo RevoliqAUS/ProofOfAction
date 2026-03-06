@@ -1,18 +1,14 @@
 {
   "builds": [
     {
-      "src": "api/analyze.py",
+      "src": "src/main.py",
       "use": "@vercel/python"
     }
   ],
-  "headers": [
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
-      ]
+      "src": "/(.*)",
+      "dest": "src/main.py"
     }
   ]
 }
