@@ -2,8 +2,8 @@ import os
 import json
 import base64
 import time
-import tempfile
 import asyncio
+import io
 from typing import Dict, Any
 
 # --- Gemini ---
@@ -20,12 +20,13 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
-# --- OpenCV ---
+# --- imageio + PIL ---
 try:
-    import cv2
-    CV2_AVAILABLE = True
+    import imageio.v3 as iio
+    from PIL import Image
+    IMAGEIO_AVAILABLE = True
 except ImportError:
-    CV2_AVAILABLE = False
+    IMAGEIO_AVAILABLE = False
 
 
 class VideoAnalyzer:
@@ -112,50 +113,84 @@ class VideoAnalyzer:
                     pass
 
     # ===================== OpenAI 分析 =====================
-    def _extract_frames_cv2(self, video_path: str, max_frames: int = 8) -> list:
-        """使用 OpenCV 从视频中均匀抽取帧，返回 base64 JPEG 列表"""
-        if not CV2_AVAILABLE:
-            raise Exception("opencv-python-headless 未安装")
+    def _extract_frames(self, video_path: str, max_frames: int = 8) -> list:
+        """使用 imageio 从视频中均匀抽取帧，返回 base64 JPEG 列表"""
+        if not IMAGEIO_AVAILABLE:
+            raise Exception("imageio 或 Pillow 未安装")
 
-        frames = []
-        cap = cv2.VideoCapture(video_path)
-
-        if not cap.isOpened():
-            raise Exception(f"无法打开视频文件: {video_path}")
+        frames_b64 = []
 
         try:
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            if total_frames <= 0:
-                raise Exception("无法读取视频帧数")
+            # 读取所有帧的元信息
+            props = iio.improps(video_path, plugin="pyav")
+            
+            # 用 imiter 迭代帧
+            all_frames = []
+            for frame in iio.imiter(video_path, plugin="pyav"):
+                all_frames.append(frame)
+            
+            total_frames = len(all_frames)
+            if total_frames == 0:
+                raise Exception("视频中没有可读取的帧")
 
-            # 计算均匀抽帧的索引
+            # 均匀选取帧
             if total_frames <= max_frames:
-                frame_indices = list(range(total_frames))
+                selected_indices = list(range(total_frames))
             else:
                 step = total_frames / max_frames
-                frame_indices = [int(step * i) for i in range(max_frames)]
+                selected_indices = [int(step * i) for i in range(max_frames)]
 
-            for idx in frame_indices:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-                ret, frame = cap.read()
-                if not ret:
-                    continue
+            for idx in selected_indices:
+                frame_array = all_frames[idx]
 
-                # 缩小图片以节省 token（最大宽度 512px）
-                h, w = frame.shape[:2]
+                # numpy array → PIL Image
+                img = Image.fromarray(frame_array)
+
+                # 缩小以节省 token
+                w, h = img.size
                 if w > 512:
-                    scale = 512 / w
-                    frame = cv2.resize(frame, (512, int(h * scale)))
+                    ratio = 512 / w
+                    img = img.resize((512, int(h * ratio)), Image.LANCZOS)
 
-                # 编码为 JPEG base64
-                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-                frame_b64 = base64.standard_b64encode(buffer).decode("utf-8")
-                frames.append(frame_b64)
+                # PIL → JPEG bytes → base64
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=75)
+                b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
+                frames_b64.append(b64)
 
-        finally:
-            cap.release()
+        except Exception as e:
+            # 如果 pyav 插件不行，尝试 ffmpeg 插件
+            print(f"⚠️ pyav 抽帧失败 ({e})，尝试 imageio-ffmpeg...")
+            try:
+                frames_b64 = []
+                all_frames = []
+                for frame in iio.imiter(video_path, plugin="pyav" if False else None):
+                    all_frames.append(frame)
 
-        return frames
+                total_frames = len(all_frames)
+                if total_frames == 0:
+                    raise Exception("视频中没有可读取的帧")
+
+                if total_frames <= max_frames:
+                    selected_indices = list(range(total_frames))
+                else:
+                    step = total_frames / max_frames
+                    selected_indices = [int(step * i) for i in range(max_frames)]
+
+                for idx in selected_indices:
+                    img = Image.fromarray(all_frames[idx])
+                    w, h = img.size
+                    if w > 512:
+                        ratio = 512 / w
+                        img = img.resize((512, int(h * ratio)), Image.LANCZOS)
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=75)
+                    b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
+                    frames_b64.append(b64)
+            except Exception as e2:
+                raise Exception(f"所有抽帧方式均失败: pyav={e}, fallback={e2}")
+
+        return frames_b64
 
     async def _analyze_with_openai(self, video_path: str, rule_description: str) -> Dict[str, Any]:
         """使用 GPT-4o 分析视频帧"""
@@ -163,7 +198,7 @@ class VideoAnalyzer:
             raise Exception("OpenAI 客户端不可用")
 
         print("🎬 [OpenAI] 抽取视频帧...")
-        frames = self._extract_frames_cv2(video_path, max_frames=8)
+        frames = self._extract_frames(video_path, max_frames=8)
 
         if not frames:
             raise Exception("未能从视频中抽取到任何帧")
@@ -244,7 +279,6 @@ class VideoAnalyzer:
             else:
                 errors[name] = result.get("_error", "未知错误")
 
-        # 决定返回结果
         if "gemini" in results and "openai" in results:
             final = results["gemini"]
             final["_cross_check"] = {
