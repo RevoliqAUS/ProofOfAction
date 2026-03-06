@@ -4,25 +4,11 @@ import os
 import shutil
 import uuid
 import msgpack
-import sys
 
-# --- 关键补丁：确保 Vercel 能在任何路径下找到你的 src 模块 ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-if os.path.dirname(current_dir) not in sys.path:
-    sys.path.append(os.path.dirname(current_dir))
-
-try:
-    from src.analyzer.multimodal_llm import VideoAnalyzer
-    from src.blockchain.onchain_settle import BlockchainNotary
-except ImportError:
-    from analyzer.multimodal_llm import VideoAnalyzer
-    from blockchain.onchain_settle import BlockchainNotary
-
+# 1. 初始化 FastAPI
 app = FastAPI()
 
-# --- 开启跨域许可（解决你控制台中的红字报错） ---
+# 2. 核心补丁：强制开启跨域 (解决 image_061702.png 的报错)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,39 +17,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-video_analyzer = VideoAnalyzer()
-blockchain_notary = BlockchainNotary()
-
+# 3. 根目录测试接口
 @app.get("/")
 async def root():
-    # 这一步用来测试你的 API 是否真的“活”了
-    return {"status": "PoA Online", "msg": "Vercel is now handling your requests!"}
+    return {"status": "PoA Online", "ready": True}
 
+# 4. 核心分析接口
 @app.post("/analyze")
 async def analyze_video(
     video: UploadFile = File(...),
     rule_description: str = Form(...),
 ):
-    # Vercel 只允许写入 /tmp 目录
+    # Vercel 只允许写入 /tmp
     temp_filepath = f"/tmp/{uuid.uuid4()}_{video.filename}"
     try:
         with open(temp_filepath, "wb") as buffer:
             shutil.copyfileobj(video.file, buffer)
-            
-        # 1. AI 视频分析
-        result = await video_analyzer.analyze_challenge_video(temp_filepath, rule_description)
-        # 2. 计算签名
-        video_hash = blockchain_notary.compute_video_hash(temp_filepath)
-        attestation = blockchain_notary.generate_eip712_signature(video_hash, result)
         
+        # 这里先返回一个模拟数据，确保链路通畅
         response_data = {
-            "analysis": result,
-            "notary": {"video_hash": video_hash, "attestation": attestation}
+            "analysis": f"AI 正在审理规则: {rule_description}",
+            "notary": {"video_hash": "mock_hash_123", "attestation": "mock_sig_456"}
         }
-        # 打包返回二进制 MessagePack
-        return Response(content=msgpack.packb(response_data), media_type="application/x-msgpack")
+        
+        # 按照 test_poa.html 的要求返回二进制包
+        return Response(
+            content=msgpack.packb(response_data), 
+            media_type="application/x-msgpack"
+        )
     except Exception as e:
-        # 即使报错也要返回 CORS 许可，方便前端看到错误信息
         return Response(content=msgpack.packb({"error": str(e)}), status_code=500)
     finally:
         if os.path.exists(temp_filepath):
