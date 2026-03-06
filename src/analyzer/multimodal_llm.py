@@ -12,7 +12,7 @@ class VideoAnalyzer:
             print("WARNING: GOOGLE_API_KEY is not set properly.")
         
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest")
+        self.model = genai.GenerativeModel(model_name="gemini-2.0-flash")
         
         self.system_prompt = """
         作为一个“专业博彩裁判”，你需要严查视频中的剪辑痕迹和是否有慢动作作弊行为。
