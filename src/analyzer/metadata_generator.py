@@ -1,19 +1,38 @@
 """
-PoA NFT Metadata Generator
-将 AI 判定结果转换为符合 ERC-721 / OpenSea 标准的 NFT 元数据
+PoA NFT Metadata Generator with ECDSA Signing
+- Layer 1: Server-side ECDSA signature on verdict
+- Layer 2: Video hash binding
+- Layer 3: On-chain attestation data (ready for smart contract)
 """
 import hashlib
 import time
 import uuid
+import json
+import os
 from typing import Dict, Any, Optional
+
+from eth_account import Account
+from eth_account.messages import encode_defunct
 
 
 class PoAMetadataGenerator:
-    """生成符合 Web3 审美的 PoA 判定报告 NFT Metadata"""
+    """Generate signed, tamper-proof PoA verification report NFT Metadata"""
 
     def __init__(self, base_url: str = "https://proof-of-action-two.vercel.app"):
         self.base_url = base_url
         self.version = "1.0"
+
+        # Load server signing key from env
+        # Generate one with: python -c "from eth_account import Account; a = Account.create(); print(a.key.hex())"
+        private_key = os.getenv("POA_SIGNING_KEY")
+        if private_key:
+            self.account = Account.from_key(private_key)
+            self.signer_address = self.account.address
+            print(f"✅ PoA Signer initialized: {self.signer_address}")
+        else:
+            self.account = None
+            self.signer_address = None
+            print("⚠️ POA_SIGNING_KEY not set. Signatures will be disabled.")
 
     def generate(
         self,
@@ -23,24 +42,17 @@ class PoAMetadataGenerator:
         verification_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        将 AI 分析结果打包成 ERC-721 兼容的 NFT Metadata
+        Generate signed ERC-721 compatible NFT Metadata
 
-        Args:
-            analysis: VideoAnalyzer 返回的分析结果
-            rule_description: 赌局/挑战规则描述
-            video_hash: 视频文件的 SHA-256 哈希（可选）
-            verification_id: 核销编号（可选，自动生成）
-
-        Returns:
-            符合 OpenSea Metadata Standard 的 JSON dict
+        The signature covers: video_hash + is_goal + confidence + timestamp
+        Anyone with the public signer address can verify the verdict is authentic.
         """
-        # 生成唯一 ID
         if not verification_id:
             verification_id = str(uuid.uuid4())[:8].upper()
 
         ts = int(time.time())
 
-        # 从分析结果提取字段
+        # Extract analysis fields
         is_goal = analysis.get("is_goal", False)
         confidence = analysis.get("confidence", 0.0)
         timestamp_str = analysis.get("timestamp", "N/A")
@@ -48,18 +60,15 @@ class PoAMetadataGenerator:
         reasoning = analysis.get("reasoning", "")
         model_used = analysis.get("_model", "unknown")
 
-        # 判定状态
+        # Status
         if is_goal and not cheat_suspected:
             status = "VERIFIED"
-            status_emoji = "✅"
         elif is_goal and cheat_suspected:
             status = "SUSPICIOUS"
-            status_emoji = "⚠️"
         else:
             status = "REJECTED"
-            status_emoji = "❌"
 
-        # 置信度等级
+        # Confidence tier
         if confidence >= 0.9:
             confidence_tier = "Platinum"
         elif confidence >= 0.7:
@@ -69,63 +78,60 @@ class PoAMetadataGenerator:
         else:
             confidence_tier = "Bronze"
 
-        # 从规则描述推断动作类别
         action_category = self._infer_action_category(rule_description)
 
-        # 构建 ERC-721 / OpenSea 标准 Metadata
+        # === Layer 1: Create signature payload ===
+        signature_payload = {
+            "verification_id": verification_id,
+            "video_sha256": video_hash or "",
+            "is_goal": is_goal,
+            "confidence": confidence,
+            "cheat_suspected": cheat_suspected,
+            "model": model_used,
+            "rule_description": rule_description,
+            "timestamp": ts,
+        }
+
+        # Create deterministic hash of the payload
+        payload_json = json.dumps(signature_payload, sort_keys=True, ensure_ascii=False)
+        payload_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+
+        # Sign with ECDSA
+        signature = None
+        if self.account:
+            message = encode_defunct(text=f"PoA Verdict: {payload_hash}")
+            signed = self.account.sign_message(message)
+            signature = signed.signature.hex()
+
+        # === Build ERC-721 Metadata ===
         metadata = {
-            # === 基本字段 (OpenSea 标准) ===
             "name": f"PoA Verification #{verification_id}: {action_category}",
             "description": (
-                f"{status_emoji} 这是由 Proof of Action 协议自动核销的视频判定报告。"
-                f"该报告通过 AI 视觉分析验证了物理动作的真实性与合规性。\n\n"
-                f"📋 规则: {rule_description}\n"
-                f"🤖 判定模型: {model_used}\n"
-                f"📊 置信度: {confidence * 100:.1f}%\n"
-                f"📝 分析: {reasoning[:200]}{'...' if len(reasoning) > 200 else ''}"
+                f"{'✅' if status == 'VERIFIED' else '❌' if status == 'REJECTED' else '⚠️'} "
+                f"Proof of Action verification report. "
+                f"This verdict was generated by AI visual analysis and cryptographically signed by the PoA engine.\n\n"
+                f"Rule: {rule_description}\n"
+                f"Model: {model_used}\n"
+                f"Confidence: {confidence * 100:.1f}%\n"
+                f"Analysis: {reasoning[:200]}{'...' if len(reasoning) > 200 else ''}"
             ),
             "image": f"{self.base_url}/api/report-card/{verification_id}",
             "external_url": f"{self.base_url}/report/{verification_id}",
 
-            # === NFT 属性 (OpenSea traits) ===
+            # === NFT Attributes ===
             "attributes": [
-                {
-                    "trait_type": "Challenge Status",
-                    "value": status
-                },
-                {
-                    "trait_type": "Action Category",
-                    "value": action_category
-                },
-                {
-                    "display_type": "boost_percentage",
-                    "trait_type": "Inference Confidence",
-                    "value": int(confidence * 100)
-                },
-                {
-                    "trait_type": "AI Model",
-                    "value": model_used
-                },
-                {
-                    "trait_type": "Confidence Tier",
-                    "value": confidence_tier
-                },
-                {
-                    "trait_type": "Cheat Detection",
-                    "value": "Suspicious" if cheat_suspected else "Clean"
-                },
-                {
-                    "trait_type": "Verifier",
-                    "value": f"PoA_Engine_v{self.version}"
-                },
-                {
-                    "display_type": "date",
-                    "trait_type": "Verification Date",
-                    "value": ts
-                },
+                {"trait_type": "Challenge Status", "value": status},
+                {"trait_type": "Action Category", "value": action_category},
+                {"display_type": "boost_percentage", "trait_type": "Inference Confidence", "value": int(confidence * 100)},
+                {"trait_type": "AI Model", "value": model_used},
+                {"trait_type": "Confidence Tier", "value": confidence_tier},
+                {"trait_type": "Cheat Detection", "value": "Suspicious" if cheat_suspected else "Clean"},
+                {"trait_type": "Verifier", "value": f"PoA_Engine_v{self.version}"},
+                {"display_type": "date", "trait_type": "Verification Date", "value": ts},
+                {"trait_type": "Signature Status", "value": "Signed" if signature else "Unsigned"},
             ],
 
-            # === PoA 特有证据字段 ===
+            # === Layer 1 + 2: Cryptographic Evidence ===
             "poa_evidence": {
                 "verification_id": verification_id,
                 "video_sha256": video_hash or "pending_upload_to_ipfs",
@@ -140,10 +146,31 @@ class PoAMetadataGenerator:
                     "reasoning": reasoning,
                     "model": model_used,
                 },
+                # Cryptographic proof
+                "signature": {
+                    "signer_address": self.signer_address,
+                    "payload_hash": f"0x{payload_hash}",
+                    "ecdsa_signature": f"0x{signature}" if signature else None,
+                    "message_format": "PoA Verdict: {payload_sha256}",
+                    "how_to_verify": (
+                        "1. Reconstruct payload_hash from poa_evidence fields. "
+                        "2. Recover signer from ECDSA signature of message 'PoA Verdict: {payload_hash}'. "
+                        "3. Confirm recovered address matches signer_address."
+                    ),
+                },
+                # Layer 3: On-chain attestation (to be filled after tx)
+                "on_chain": {
+                    "chain": "base",
+                    "chain_id": 8453,
+                    "contract_address": None,  # Fill after deploying contract
+                    "tx_hash": None,            # Fill after on-chain attestation
+                    "block_number": None,
+                    "status": "pending_attestation",
+                },
             },
         }
 
-        # 如果有交叉验证结果，加入
+        # Cross-check if available
         cross_check = analysis.get("_cross_check")
         if cross_check:
             metadata["attributes"].append({
@@ -154,8 +181,65 @@ class PoAMetadataGenerator:
 
         return metadata
 
+    def verify_signature(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Verify the ECDSA signature in a PoA metadata JSON.
+        Returns verification result with recovered address.
+        """
+        evidence = metadata.get("poa_evidence", {})
+        sig_data = evidence.get("signature", {})
+
+        if not sig_data.get("ecdsa_signature"):
+            return {"valid": False, "reason": "No signature present"}
+
+        try:
+            # Reconstruct payload
+            payload = {
+                "verification_id": evidence.get("verification_id"),
+                "video_sha256": evidence.get("video_sha256", ""),
+                "is_goal": evidence["full_analysis"]["is_goal"],
+                "confidence": evidence["full_analysis"]["confidence"],
+                "cheat_suspected": evidence["full_analysis"]["cheat_suspected"],
+                "model": evidence["full_analysis"]["model"],
+                "rule_description": evidence.get("rule_description", ""),
+                "timestamp": evidence.get("timestamp"),
+            }
+            payload_json = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+            payload_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+
+            # Verify hash matches
+            expected_hash = sig_data.get("payload_hash", "")
+            if f"0x{payload_hash}" != expected_hash:
+                return {
+                    "valid": False,
+                    "reason": f"Payload hash mismatch. Expected {expected_hash}, got 0x{payload_hash}. Data may have been tampered with."
+                }
+
+            # Recover signer from signature
+            message = encode_defunct(text=f"PoA Verdict: {payload_hash}")
+            signature_hex = sig_data["ecdsa_signature"]
+            if signature_hex.startswith("0x"):
+                signature_hex = signature_hex[2:]
+
+            recovered = Account.recover_message(message, signature=bytes.fromhex(signature_hex))
+
+            # Check if recovered address matches claimed signer
+            claimed_signer = sig_data.get("signer_address", "")
+            is_valid = recovered.lower() == claimed_signer.lower()
+
+            return {
+                "valid": is_valid,
+                "recovered_address": recovered,
+                "claimed_signer": claimed_signer,
+                "payload_hash": f"0x{payload_hash}",
+                "reason": "Signature verified successfully" if is_valid else "Recovered address does not match claimed signer"
+            }
+
+        except Exception as e:
+            return {"valid": False, "reason": f"Verification error: {str(e)}"}
+
     def compute_video_hash(self, video_path: str) -> str:
-        """计算视频文件的 SHA-256 哈希"""
+        """Compute SHA-256 hash of video file"""
         sha256 = hashlib.sha256()
         with open(video_path, "rb") as f:
             for chunk in iter(lambda: f.read(8192), b""):
@@ -163,9 +247,8 @@ class PoAMetadataGenerator:
         return f"0x{sha256.hexdigest()}"
 
     def _infer_action_category(self, rule_description: str) -> str:
-        """从规则描述中推断动作类别"""
+        """Infer action category from rule description"""
         desc_lower = rule_description.lower()
-
         categories = {
             "Golf": ["高尔夫", "golf", "swing", "挥杆", "球杆", "hackmotion"],
             "Basketball": ["篮球", "basketball", "dunk", "投篮", "三分"],
@@ -176,10 +259,8 @@ class PoAMetadataGenerator:
             "Dance": ["舞蹈", "dance", "dancing", "跳舞"],
             "Music": ["音乐", "music", "guitar", "piano", "吉他", "钢琴"],
         }
-
         for category, keywords in categories.items():
             for keyword in keywords:
                 if keyword in desc_lower:
                     return category
-
         return "General Challenge"
