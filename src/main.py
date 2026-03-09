@@ -4,6 +4,7 @@ import uuid
 import shutil
 import time
 import json
+import msgpack  # <--- 新增：引入二进制序列化库
 
 from fastapi import FastAPI, UploadFile, File, Form, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,7 @@ from analyzer.metadata_generator import PoAMetadataGenerator
 
 app = FastAPI()
 
+# 跨域配置：确保前端 Frame 能顺利访问
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,10 +36,9 @@ metadata_gen = PoAMetadataGenerator()
 # In-memory store (use DB in production)
 reports_store: dict = {}
 
-
 @app.get("/")
 async def root():
-    """Health check"""
+    """Health check - 依然返回 JSON，方便浏览器直接查看状态"""
     return {
         "status": "PoA Online",
         "timestamp": int(time.time()),
@@ -49,7 +50,6 @@ async def root():
         }
     }
 
-
 @app.post("/analyze")
 async def analyze_video(
     video: UploadFile = File(...),
@@ -57,30 +57,30 @@ async def analyze_video(
 ):
     temp_filepath = f"/tmp/{uuid.uuid4()}_{video.filename}"
     try:
-        # 1. Save video
+        # 1. 保存视频
         with open(temp_filepath, "wb") as buffer:
             shutil.copyfileobj(video.file, buffer)
 
-        # 2. Compute video hash
+        # 2. 计算视频 Hash
         video_hash = metadata_gen.compute_video_hash(temp_filepath)
 
-        # 3. AI analysis
+        # 3. AI 分析
         analysis = await video_analyzer.analyze_challenge_video(
             temp_filepath, rule_description
         )
 
-        # 4. Generate signed NFT Metadata
+        # 4. 生成带签名的 NFT Metadata
         nft_metadata = metadata_gen.generate(
             analysis=analysis,
             rule_description=rule_description,
             video_hash=video_hash,
         )
 
-        # 5. Store report
+        # 5. 存储报告
         verification_id = nft_metadata["poa_evidence"]["verification_id"]
         reports_store[verification_id] = nft_metadata
 
-        # 6. Response
+        # 6. 构造返回数据
         response_data = {
             "analysis": analysis,
             "nft_metadata": nft_metadata,
@@ -88,22 +88,29 @@ async def analyze_video(
             "timestamp": int(time.time()),
         }
 
+        # --- 核心手术：将数据转为二进制 MessagePack ---
+        # use_bin_type=True 确保字符串和二进制被正确区分
+        binary_payload = msgpack.packb(response_data, use_bin_type=True)
+
         return Response(
-            content=json.dumps(response_data, ensure_ascii=False),
-            media_type="application/json",
+            content=binary_payload,
+            media_type="application/x-msgpack",  # <--- 告诉前端这是二进制包
         )
 
     except Exception as e:
-        error_payload = json.dumps({"error": str(e)}, ensure_ascii=False)
+        # 错误处理也建议保持一致，或者简单返回二进制错误包
+        error_data = {"error": str(e)}
         return Response(
-            content=error_payload,
+            content=msgpack.packb(error_data, use_bin_type=True),
             status_code=500,
-            media_type="application/json",
+            media_type="application/x-msgpack",
         )
     finally:
         if os.path.exists(temp_filepath):
             os.remove(temp_filepath)
 
+# ... 其余的 GET 路由 (report/signer等) 保持不变即可 ...
+# 因为它们主要用于后端查询或验证，不需要强行走二进制流
 
 @app.get("/report/{verification_id}")
 async def get_report(verification_id: str):
