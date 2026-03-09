@@ -102,7 +102,7 @@
                 formData.append('video', new Blob(['binary_dump'], { type: 'video/mp4' }), 'audit.mp4');
 
                 // 注意：路径必须匹配 vercel.json 的 rewrites
-                const response = await fetch('/api/proof-of-action', { 
+                const response = await fetch('/analyze', { 
                     method: 'POST', 
                     body: formData 
                 });
