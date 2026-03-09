@@ -6,3 +6,4 @@ python-multipart==0.0.12
 imageio[pyav]
 pillow==11.1.0
 eth-account>=0.11.0
+msgpack==1.1.0
