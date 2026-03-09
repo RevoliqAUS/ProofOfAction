@@ -44,10 +44,10 @@
 
 <body class="bg-black text-green-500 flex flex-col items-center justify-center h-screen p-6 overflow-hidden">
 
-    <div class="border-2 border-green-900 bg-black/80 p-6 rounded-lg w-full max-w-md relative overflow-hidden shadow-[0_0_20px_rgba(0,50,0,0.5)]">
+    <div class="border-2 border-green-900 bg-black/80 p-6 rounded-lg w-full max-w-md relative overflow-hidden shadow-[0_0_20px_rgba(0,50,0,0.5)] flex flex-col max-h-[90vh]">
         <div id="scanner" class="hidden scan-line"></div>
 
-        <header class="mb-6 border-b border-green-900 pb-2 flex justify-between items-end">
+        <header class="mb-4 border-b border-green-900 pb-2 flex justify-between items-end shrink-0">
             <div>
                 <h1 class="text-xl font-bold tracking-widest uppercase">PoA Labs</h1>
                 <p class="text-[9px] text-green-700 matrix-text">SECURE_TUNNEL: <span id="user-name">GUEST_DEGEN</span></p>
@@ -56,22 +56,30 @@
                 ZERO_TRUST: ACTIVE<br>MSGPACK: WASM_ON
             </div>
         </header>
-        
-        <div class="mb-4 text-center">
-            <input type="file" id="video-upload" accept="video/mp4,video/quicktime" class="hidden" onchange="document.getElementById('file-name').innerText = '> FILE_LOADED: ' + this.files[0].name">
-            <label for="video-upload" class="cursor-pointer border border-green-800 text-green-700 hover:text-green-400 hover:border-green-500 text-[10px] py-1 px-3 rounded uppercase transition-all">
-                [ SELECT_VIDEO_SOURCE ]
-            </label>
-            <p id="file-name" class="text-[9px] text-green-600 mt-2 matrix-text">> WAITING_FOR_VIDEO...</p>
+
+        <div class="mb-3 w-full shrink-0">
+            <input type="text" id="rule-input" value="Analyze the golf swing in the video, focusing on the black device worn on the player's left wrist. Confirm whether it is a HackMotion wrist sensor..." class="w-full bg-green-950/30 border border-green-800 text-green-400 text-[10px] p-2 focus:outline-none focus:border-green-500 font-mono" placeholder="> ENTER_VERIFICATION_RULE">
         </div>
 
-        <button onclick="startAudit()" id="audit-btn" class="border border-green-500 hover:bg-green-500/20 text-green-400 py-3 rounded uppercase text-xs tracking-widest transition-all active:scale-95 w-full">
+        <div class="mb-4 w-full flex justify-between items-center border border-green-800 p-2 bg-green-950/20 shrink-0">
+            <input type="file" id="video-upload" accept="video/mp4,video/quicktime" class="hidden" onchange="document.getElementById('file-name').innerText = '> FILE: ' + this.files[0].name">
+            <label for="video-upload" class="cursor-pointer text-green-600 hover:text-green-400 text-[10px] uppercase transition-all whitespace-nowrap">
+                [ SELECT_VIDEO ]
+            </label>
+            <span id="file-name" class="text-[9px] text-green-700 truncate max-w-[180px] text-right">> NO_FILE</span>
+        </div>
+        
+        <div id="status-box" class="flex-grow min-h-[160px] border border-green-900/50 bg-green-950/10 rounded mb-4 matrix-text text-[10px] p-4 overflow-y-auto no-scrollbar relative">
+            <span class="animate-pulse">> SYSTEM READY...</span><br>
+            <span class="text-green-800">> AWAITING VIDEO INPUT.</span>
+        </div>
+
+        <button onclick="startAudit()" id="audit-btn" class="border border-green-500 hover:bg-green-500/20 text-green-400 py-3 rounded uppercase text-xs tracking-widest transition-all active:scale-95 w-full shrink-0">
             [ EXECUTE_BINARY_AUDIT ]
         </button>
     </div>
 
     <script>
-        // 核心：修复 SDK 初始化逻辑
         async function init() {
             try {
                 const sdk = window.farcaster?.FrameSDK;
@@ -95,48 +103,71 @@
             const scanner = document.getElementById('scanner');
             const btn = document.getElementById('audit-btn');
 
-            btn.disabled = true;
-            scanner.classList.remove('hidden');
-            box.innerHTML += `<p class="text-green-400 mt-2">> INITIATING SECURE FETCH...</p>`;
-
             try {
-                const formData = new FormData();
-                formData.append('rule_description', 'FRAME_AUDIT_V0.1');
-                
-                // --- 删除下面这行假的 Blob ---
-                // formData.append('video', new Blob(['binary_dump'], { type: 'video/mp4' }), 'audit.mp4');
-                
-                // --- 换成这块真实的逻辑 ---
+                // 1. 获取视频文件
                 const fileInput = document.getElementById('video-upload');
                 if (!fileInput.files.length) {
                     throw new Error("NO_VIDEO_SOURCE_SELECTED");
                 }
-                formData.append('video', fileInput.files[0]);
-                // ---------------------------
 
-                const response = await fetch('/analyze', {  // 确保这里还是 /analyze
+                btn.disabled = true;
+                scanner.classList.remove('hidden');
+                box.innerHTML = `<p class="text-green-400">> INITIATING SECURE FETCH...</p>`;
+
+                const formData = new FormData();
+                
+                // 2. 获取规则输入
+                const ruleVal = document.getElementById('rule-input').value.trim();
+                const finalRule = ruleVal ? ruleVal : 'Analyze the actions in this video.';
+                formData.append('rule_description', finalRule);
+                formData.append('video', fileInput.files[0]);
+
+                // 3. 执行真实的网络请求 (修复了上一版的语法错误)
+                const response = await fetch('/analyze', {  
+                    method: 'POST',
+                    body: formData
+                });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP_${response.status} (Route Error)`);
+                    const errText = await response.text();
+                    throw new Error(`HTTP_${response.status}: ${errText.substring(0, 40)}`);
                 }
 
                 const arrayBuffer = await response.arrayBuffer();
                 box.innerHTML += `<p>> RECEIVED: ${arrayBuffer.byteLength} BYTES (BINARY)</p>`;
+                box.innerHTML += `<p class="animate-pulse">> DECODING MSGPACK PAYLOAD...</p>`;
                 
+                // 4. 二进制解码
                 const decodedData = MessagePack.decode(new Uint8Array(arrayBuffer));
                 
+                // 5. 渲染高级判决 UI
                 setTimeout(() => {
                     scanner.classList.add('hidden');
+                    const analysis = decodedData.analysis;
+                    
+                    // 容错处理，防止 analysis 为空导致报错
+                    if (!analysis) {
+                        box.innerHTML = `<p class="text-red-500">> ERR: INVALID_ANALYSIS_FORMAT</p><pre class="text-[8px] mt-2">${JSON.stringify(decodedData, null, 2)}</pre>`;
+                        btn.disabled = false;
+                        return;
+                    }
+
                     box.innerHTML = `
-                        <div class="text-center py-4">
-                            <h2 class="text-green-400 font-bold text-lg mb-1 animate-pulse">VERIFIED</h2>
-                            <div class="text-[8px] text-left bg-green-900/10 p-2 mt-2 border border-green-800/50 h-28 overflow-auto no-scrollbar">
-                                <pre>${JSON.stringify(decodedData, null, 2)}</pre>
+                        <div class="text-left w-full h-full flex flex-col">
+                            <h2 class="text-green-400 font-bold text-sm mb-2 text-center animate-pulse">VERDICT: ${analysis.is_goal ? 'APPROVED' : 'REJECTED'}</h2>
+                            <div class="text-[9px] text-green-500 space-y-1">
+                                <p>> GOAL_ACHIEVED: <span class="${analysis.is_goal ? 'text-green-400' : 'text-red-500'}">${analysis.is_goal ? 'YES' : 'NO'}</span></p>
+                                <p>> CONFIDENCE: ${analysis.confidence ? (analysis.confidence * 100).toFixed(1) + '%' : 'N/A'}</p>
+                                <p>> CHEAT_SUSPECTED: <span class="${analysis.cheat_suspected ? 'text-red-500' : 'text-green-400'}">${analysis.cheat_suspected ? 'YES' : 'CLEAN'}</span></p>
+                            </div>
+                            <div class="mt-2 text-[8px] text-green-600 border-t border-green-900 pt-2 overflow-y-auto no-scrollbar">
+                                <p class="mb-1">> REASONING:</p>
+                                <p class="text-green-400 leading-tight">${analysis.reasoning || 'No reasoning provided.'}</p>
                             </div>
                         </div>
                     `;
                     btn.disabled = false;
-                }, 1500);
+                }, 1000);
 
             } catch (e) {
                 console.error("Audit Error:", e);
@@ -146,7 +177,6 @@
             }
         }
 
-        // 确保 SDK 初始化在 DOM 加载后运行
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', init);
         } else {
