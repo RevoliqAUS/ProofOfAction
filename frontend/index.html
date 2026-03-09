@@ -102,13 +102,19 @@
             try {
                 const formData = new FormData();
                 formData.append('rule_description', 'FRAME_AUDIT_V0.1');
-                formData.append('video', new Blob(['binary_dump'], { type: 'video/mp4' }), 'audit.mp4');
+                
+                // --- 删除下面这行假的 Blob ---
+                // formData.append('video', new Blob(['binary_dump'], { type: 'video/mp4' }), 'audit.mp4');
+                
+                // --- 换成这块真实的逻辑 ---
+                const fileInput = document.getElementById('video-upload');
+                if (!fileInput.files.length) {
+                    throw new Error("NO_VIDEO_SOURCE_SELECTED");
+                }
+                formData.append('video', fileInput.files[0]);
+                // ---------------------------
 
-                // 注意：路径必须匹配 vercel.json 的 rewrites
-                const response = await fetch('/analyze', { 
-                    method: 'POST', 
-                    body: formData 
-                });
+                const response = await fetch('/analyze', {  // 确保这里还是 /analyze
 
                 if (!response.ok) {
                     throw new Error(`HTTP_${response.status} (Route Error)`);
