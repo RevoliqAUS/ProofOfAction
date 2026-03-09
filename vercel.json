@@ -15,6 +15,10 @@
       "destination": "frontend/index.html"
     },
     {
+      "source": "/api/proof-of-action",
+      "destination": "src/main.py"
+    },
+    {
       "source": "/analyze",
       "destination": "src/main.py"
     },
