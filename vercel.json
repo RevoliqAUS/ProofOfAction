@@ -3,12 +3,24 @@
     {
       "src": "src/main.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "frontend/index.html",
+      "use": "@vercel/static"
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/(.*)",
-      "dest": "src/main.py"
+      "source": "/",
+      "destination": "frontend/index.html"
+    },
+    {
+      "source": "/analyze",
+      "destination": "src/main.py"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "src/main.py"
     }
   ]
 }
