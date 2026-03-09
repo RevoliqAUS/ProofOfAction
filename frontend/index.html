@@ -38,7 +38,6 @@
         @keyframes scan { 0% { top: -10%; } 100% { top: 110%; } }
         .scan-line { position: absolute; width: 100%; height: 2px; background: rgba(34, 197, 94, 0.5); box-shadow: 0 0 15px 2px rgba(34, 197, 94, 0.8); animation: scan 2s linear infinite; }
         .matrix-text { font-family: 'Courier New', Courier, monospace; }
-        /* 隐藏滚动条但保持功能 */
         .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
@@ -69,10 +68,9 @@
     </div>
 
     <script>
-        // 初始化 Farcaster SDK
+        // 核心：修复 SDK 初始化逻辑
         async function init() {
             try {
-                // 使用可选链安全检查 SDK 是否加载
                 const sdk = window.farcaster?.FrameSDK;
                 if (sdk) {
                     const context = await sdk.context;
@@ -80,16 +78,15 @@
                         document.getElementById('user-name').innerText = context.user.username.toUpperCase();
                     }
                     sdk.actions.ready();
-                    console.log("PoA Labs: Frame SDK initialized.");
+                    console.log("PoA Labs: Frame SDK Online");
                 } else {
-                    console.log("PoA Labs: Standard Browser Mode.");
+                    console.log("PoA Labs: Standard Web Mode");
                 }
             } catch (err) {
-                console.warn("SDK Init failed (likely non-frame env):", err);
+                console.warn("PoA Labs: SDK initialization skipped (Non-Frame env)");
             }
         }
 
-        // 核心审计逻辑
         async function startAudit() {
             const box = document.getElementById('status-box');
             const scanner = document.getElementById('scanner');
@@ -102,25 +99,21 @@
             try {
                 const formData = new FormData();
                 formData.append('rule_description', 'FRAME_AUDIT_V0.1');
-                // 模拟一个伪造的视频文件流
-                formData.append('video', new Blob(['fake_binary_data'], { type: 'video/mp4' }), 'audit.mp4');
+                formData.append('video', new Blob(['binary_dump'], { type: 'video/mp4' }), 'audit.mp4');
 
-                // 注意：此路径必须在 vercel.json 的 rewrites 中正确配置到 src/main.py
+                // 注意：路径必须匹配 vercel.json 的 rewrites
                 const response = await fetch('/api/proof-of-action', { 
                     method: 'POST', 
                     body: formData 
                 });
 
                 if (!response.ok) {
-                    const errText = await response.text();
-                    throw new Error(`HTTP_${response.status}: ${errText.substring(0, 20)}...`);
+                    throw new Error(`HTTP_${response.status} (Route Error)`);
                 }
 
-                // 读取原始二进制流
                 const arrayBuffer = await response.arrayBuffer();
-                box.innerHTML += `<p>> RECEIVED: ${arrayBuffer.byteLength} BYTES (BINARY_PACK)</p>`;
+                box.innerHTML += `<p>> RECEIVED: ${arrayBuffer.byteLength} BYTES (BINARY)</p>`;
                 
-                // 使用 MessagePack 库在内存中安全解密
                 const decodedData = MessagePack.decode(new Uint8Array(arrayBuffer));
                 
                 setTimeout(() => {
@@ -137,14 +130,14 @@
                 }, 1500);
 
             } catch (e) {
-                console.error("Audit Failure:", e);
+                console.error("Audit Error:", e);
                 box.innerHTML += `<p class="text-red-500 mt-2">> ERR: ${e.message}</p>`;
                 scanner.classList.add('hidden');
                 btn.disabled = false;
             }
         }
 
-        // 页面完全加载后再初始化
+        // 确保 SDK 初始化在 DOM 加载后运行
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', init);
         } else {
