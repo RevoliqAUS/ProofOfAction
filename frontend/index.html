@@ -57,9 +57,12 @@
             </div>
         </header>
         
-        <div id="status-box" class="h-48 border border-green-900/50 bg-green-950/10 rounded mb-6 matrix-text text-[10px] p-4 overflow-y-auto no-scrollbar">
-            <span class="animate-pulse">> SYSTEM READY...</span><br>
-            <span class="text-green-800">> NETWORK STACK LOCKED.</span>
+        <div class="mb-4 text-center">
+            <input type="file" id="video-upload" accept="video/mp4,video/quicktime" class="hidden" onchange="document.getElementById('file-name').innerText = '> FILE_LOADED: ' + this.files[0].name">
+            <label for="video-upload" class="cursor-pointer border border-green-800 text-green-700 hover:text-green-400 hover:border-green-500 text-[10px] py-1 px-3 rounded uppercase transition-all">
+                [ SELECT_VIDEO_SOURCE ]
+            </label>
+            <p id="file-name" class="text-[9px] text-green-600 mt-2 matrix-text">> WAITING_FOR_VIDEO...</p>
         </div>
 
         <button onclick="startAudit()" id="audit-btn" class="border border-green-500 hover:bg-green-500/20 text-green-400 py-3 rounded uppercase text-xs tracking-widest transition-all active:scale-95 w-full">
