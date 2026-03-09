@@ -98,13 +98,50 @@
             }
         }
 
+        // 预留的 Mint NFT 伪上链函数
+        function mintNFT(nftMetadata) {
+            const btn = document.getElementById('audit-btn');
+            const box = document.getElementById('status-box');
+
+            // 按钮变形：进入上链状态
+            btn.innerText = "[ MINTING TO BASE CHAIN... ]";
+            btn.classList.add('animate-pulse');
+            btn.disabled = true;
+
+            box.innerHTML = `
+                <div class="text-left w-full h-full flex flex-col justify-center space-y-2 text-[10px]">
+                    <p class="text-green-400">> PACKAGING POA EVIDENCE...</p>
+                    <p class="text-green-500">> SIGNING WITH ECDSA KEY...</p>
+                    <p class="text-green-600 animate-pulse">> BROADCASTING TO BASE NETWORK...</p>
+                </div>
+            `;
+
+            // 模拟 2.5 秒的链上确认延迟
+            setTimeout(() => {
+                btn.innerText = "[ VIEW ON BASESCAN ]";
+                btn.classList.remove('animate-pulse');
+                btn.disabled = false;
+                // 点击跳转 Basescan
+                btn.onclick = () => window.open('https://basescan.org/', '_blank');
+                
+                // 状态框展示终极成功画面
+                box.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full text-center space-y-2">
+                        <div class="text-green-400 text-lg font-bold animate-pulse">SUCCESS</div>
+                        <div class="text-[10px] text-green-500">> POA EVIDENCE SECURED ON-CHAIN</div>
+                        <div class="text-[10px] text-green-600">> NETWORK: BASE MAINNET</div>
+                        <div class="text-[10px] text-green-400 font-mono mt-2 bg-green-900/30 p-1 border border-green-800">> TOKEN_ID: #${Math.floor(Math.random() * 90000) + 10000}</div>
+                    </div>
+                `;
+            }, 2500);
+        }
+
         async function startAudit() {
             const box = document.getElementById('status-box');
             const scanner = document.getElementById('scanner');
             const btn = document.getElementById('audit-btn');
 
             try {
-                // 1. 获取视频文件
                 const fileInput = document.getElementById('video-upload');
                 if (!fileInput.files.length) {
                     throw new Error("NO_VIDEO_SOURCE_SELECTED");
@@ -115,14 +152,11 @@
                 box.innerHTML = `<p class="text-green-400">> INITIATING SECURE FETCH...</p>`;
 
                 const formData = new FormData();
-                
-                // 2. 获取规则输入
                 const ruleVal = document.getElementById('rule-input').value.trim();
                 const finalRule = ruleVal ? ruleVal : 'Analyze the actions in this video.';
                 formData.append('rule_description', finalRule);
                 formData.append('video', fileInput.files[0]);
 
-                // 3. 执行真实的网络请求 (修复了上一版的语法错误)
                 const response = await fetch('/analyze', {  
                     method: 'POST',
                     body: formData
@@ -137,15 +171,12 @@
                 box.innerHTML += `<p>> RECEIVED: ${arrayBuffer.byteLength} BYTES (BINARY)</p>`;
                 box.innerHTML += `<p class="animate-pulse">> DECODING MSGPACK PAYLOAD...</p>`;
                 
-                // 4. 二进制解码
                 const decodedData = MessagePack.decode(new Uint8Array(arrayBuffer));
                 
-                // 5. 渲染高级判决 UI
                 setTimeout(() => {
                     scanner.classList.add('hidden');
                     const analysis = decodedData.analysis;
                     
-                    // 容错处理，防止 analysis 为空导致报错
                     if (!analysis) {
                         box.innerHTML = `<p class="text-red-500">> ERR: INVALID_ANALYSIS_FORMAT</p><pre class="text-[8px] mt-2">${JSON.stringify(decodedData, null, 2)}</pre>`;
                         btn.disabled = false;
@@ -154,7 +185,7 @@
 
                     box.innerHTML = `
                         <div class="text-left w-full h-full flex flex-col">
-                            <h2 class="text-green-400 font-bold text-sm mb-2 text-center animate-pulse">VERDICT: ${analysis.is_goal ? 'APPROVED' : 'REJECTED'}</h2>
+                            <h2 class="${analysis.is_goal ? 'text-green-400' : 'text-red-500'} font-bold text-sm mb-2 text-center animate-pulse">VERDICT: ${analysis.is_goal ? 'APPROVED' : 'REJECTED'}</h2>
                             <div class="text-[9px] text-green-500 space-y-1">
                                 <p>> GOAL_ACHIEVED: <span class="${analysis.is_goal ? 'text-green-400' : 'text-red-500'}">${analysis.is_goal ? 'YES' : 'NO'}</span></p>
                                 <p>> CONFIDENCE: ${analysis.confidence ? (analysis.confidence * 100).toFixed(1) + '%' : 'N/A'}</p>
@@ -166,7 +197,22 @@
                             </div>
                         </div>
                     `;
+
+                    // 核心逻辑：动态转变按钮状态
                     btn.disabled = false;
+                    if (analysis.is_goal) {
+                        // 验证通过：变成强烈的绿色 MINT 按钮
+                        btn.innerText = "[ MINT_ONCHAIN_EVIDENCE ]";
+                        btn.classList.remove('text-green-400', 'border-green-500', 'hover:bg-green-500/20');
+                        btn.classList.add('text-black', 'bg-green-500', 'hover:bg-green-400', 'font-bold');
+                        btn.onclick = () => mintNFT(decodedData.nft_metadata);
+                    } else {
+                        // 验证失败：变成重试按钮
+                        btn.innerText = "[ RETRY_VERIFICATION ]";
+                        btn.classList.remove('text-green-400', 'border-green-500', 'hover:bg-green-500/20');
+                        btn.classList.add('text-red-500', 'border-red-500', 'hover:bg-red-500/20');
+                        btn.onclick = () => window.location.reload();
+                    }
                 }, 1000);
 
             } catch (e) {
