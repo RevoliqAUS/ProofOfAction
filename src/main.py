@@ -349,6 +349,25 @@ async def kick_auth_callback(
         )
 
 
+@app.get("/callback")
+async def callback_root(
+    code: str = Query(None),
+    state: str = Query(None),
+    error: str = Query(None),
+    error_description: str = Query(None),
+):
+    """
+    Root callback route for Kick OAuth.
+    Forwards to kick_auth_callback to match KICK_REDIRECT_URL.
+    """
+    return await kick_auth_callback(
+        code=code,
+        state=state,
+        error=error,
+        error_description=error_description,
+    )
+
+
 @app.post("/kick/challenge")
 async def kick_create_challenge(
     channel_id: str = Form(..., description="Kick channel ID"),

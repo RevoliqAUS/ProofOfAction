@@ -67,7 +67,7 @@ class KickOAuth:
         self.client_id = client_id or os.getenv("KICK_CLIENT_ID")
         self.client_secret = client_secret or os.getenv("KICK_CLIENT_SECRET")
         self.redirect_uri = redirect_uri or os.getenv(
-            "KICK_REDIRECT_URI", "http://localhost:8000/kick/callback"
+            "KICK_REDIRECT_URL", "http://localhost:8000/kick/callback"
         )
 
         if not self.client_id:
