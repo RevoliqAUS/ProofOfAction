@@ -368,6 +368,64 @@ async def callback_root(
     )
 
 
+@app.get("/kick/token")
+async def kick_token():
+    """临时端点：返回当前 user_access_token（仅用于调试）"""
+    if not kick_oauth:
+        return {"error": "Kick integration not configured"}
+
+    token = kick_oauth.user_access_token
+    if not token:
+        return {"error": "No user token. Visit /kick/auth first."}
+
+    return {
+        "access_token": token.access_token,
+        "token_type": token.token_type,
+        "expires_in": token.expires_in,
+        "expires_at": str(token.expires_at) if token.expires_at else None,
+        "scope": token.scope,
+    }
+
+
+@app.get("/kick/me")
+async def kick_me():
+    """获取当前授权用户的 Kick 信息和频道信息（测试用）"""
+    if not kick_oauth:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Kick integration not configured"}
+        )
+
+    if not kick_oauth.user_access_token:
+        return {"error": "Not authenticated. Visit /kick/auth first."}
+
+    try:
+        # 获取用户信息
+        user_info = await kick_oauth.api_request(
+            "GET",
+            "/public/v1/users",
+            token=kick_oauth.user_access_token,
+        )
+
+        # 获取频道信息
+        channel_info = await kick_oauth.api_request(
+            "GET",
+            "/public/v1/channels",
+            token=kick_oauth.user_access_token,
+        )
+
+        return {
+            "user": user_info,
+            "channel": channel_info,
+        }
+    except Exception as e:
+        logger.error(f"Error fetching Kick user info: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+
 @app.post("/kick/challenge")
 async def kick_create_challenge(
     channel_id: str = Form(..., description="Kick channel ID"),
@@ -378,12 +436,27 @@ async def kick_create_challenge(
     Manually trigger a challenge creation (for testing).
 
     This simulates what happens when a user sends !challenge in chat.
+    Requires OAuth authentication first (/kick/auth).
     """
     if not kick_bot:
         return JSONResponse(
             status_code=503,
             content={"error": "Kick integration not configured"}
         )
+
+    # Check for user token
+    user_token = kick_oauth.user_access_token if kick_oauth else None
+    if not user_token:
+        logger.warning("[/kick/challenge] No user_access_token available")
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "Not authenticated",
+                "message": "Please visit /kick/auth first to authenticate with Kick"
+            }
+        )
+
+    logger.info(f"[/kick/challenge] Using user token: {user_token.access_token[:20]}...")
 
     try:
         # Create a mock challenge command
@@ -401,10 +474,11 @@ async def kick_create_challenge(
             timestamp=datetime.utcnow(),
         )
 
-        # Announce in chat
+        # Announce in chat with user token
         result = await kick_bot.announce_challenge(
             channel_id=channel_id,
             challenge=challenge,
+            token=user_token,
         )
 
         return {

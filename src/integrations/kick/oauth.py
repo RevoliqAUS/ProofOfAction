@@ -78,6 +78,7 @@ class KickOAuth:
         # Token storage (in production, use a proper store like Redis)
         self._app_token: Optional[TokenResponse] = None
         self._user_tokens: Dict[str, TokenResponse] = {}
+        self._current_user_token: Optional[TokenResponse] = None  # Most recent user token
 
         # PKCE state storage (code_verifier per state)
         self._pkce_states: Dict[str, str] = {}
@@ -92,6 +93,15 @@ class KickOAuth:
     async def close(self):
         if self._http_client and not self._http_client.is_closed:
             await self._http_client.aclose()
+
+    @property
+    def user_access_token(self) -> Optional[TokenResponse]:
+        """Get the most recent user access token"""
+        if self._current_user_token:
+            logger.debug(f"[OAuth] user_access_token exists, expires_at: {self._current_user_token.expires_at}")
+        else:
+            logger.debug("[OAuth] user_access_token is None")
+        return self._current_user_token
 
     # ===================== PKCE Helpers =====================
 
@@ -244,6 +254,7 @@ class KickOAuth:
 
             # Store token (keyed by state for simplicity; in production use user_id)
             self._user_tokens[state] = token
+            self._current_user_token = token  # Keep reference to most recent token
 
             logger.info("Successfully exchanged code for User Access Token")
             return token

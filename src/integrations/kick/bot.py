@@ -53,7 +53,7 @@ class KickBot:
 
     # Regex pattern for !challenge command
     # Format: !challenge <description> <time_limit>
-    # Example: !challenge 连续投进3个三分球 5m
+    # Example: !challenge score 3 consecutive three-pointers 5m
     CHALLENGE_PATTERN = re.compile(
         r"^!challenge\s+(.+?)\s+(\d+[smh])$",
         re.IGNORECASE | re.UNICODE,
@@ -182,17 +182,21 @@ class KickBot:
         """
         Send a message to a Kick channel chat.
 
-        POST /api/kick/public/v1/chat
+        POST https://api.kick.com/public/v1/chat
 
         Args:
-            channel_id: Target channel ID
+            channel_id: Target channel ID (will be converted to int)
             content: Message content (max 500 chars)
             token: User token with chat:write scope
             reply_to_message_id: Optional message ID to reply to
         """
+        # Debug: log token source
         if token is None:
-            # Use app token for bot messages
+            logger.warning("[send_message] No token provided, falling back to App Access Token")
             token = await self.oauth.get_app_access_token()
+            logger.info(f"[send_message] Using App Access Token: {token.access_token[:20]}...")
+        else:
+            logger.info(f"[send_message] Using provided User Access Token: {token.access_token[:20]}...")
 
         client = await self._get_client()
 
@@ -200,9 +204,11 @@ class KickBot:
         if len(content) > 500:
             content = content[:497] + "..."
 
+        # Kick API requires broadcaster_user_id as integer, type must be "user"
         payload = {
-            "broadcaster_user_id": channel_id,
+            "broadcaster_user_id": int(channel_id),
             "content": content,
+            "type": "user",
         }
 
         if reply_to_message_id:
@@ -213,9 +219,14 @@ class KickBot:
             "Content-Type": "application/json",
         }
 
+        # Debug: log request details
+        logger.info(f"[send_message] POST {API_HOST}/public/v1/chat")
+        logger.info(f"[send_message] Headers: Authorization: Bearer {token.access_token[:20]}...")
+        logger.info(f"[send_message] Payload: {payload}")
+
         try:
             response = await client.post(
-                f"{API_HOST}/api/kick/public/v1/chat",
+                f"{API_HOST}/public/v1/chat",
                 json=payload,
                 headers=headers,
             )
@@ -266,18 +277,16 @@ class KickBot:
             status_emoji = "❌"
             status_text = "REJECTED"
 
-        message = (
-            f"{status_emoji} 【PoA AI 裁判结果】\n"
-            f"挑战: {challenge.description}\n"
-            f"发起人: @{challenge.sender_username}\n"
-            f"状态: {status_text}\n"
-            f"置信度: {confidence * 100:.1f}%\n"
-        )
+        # Get tx_hash from result if available
+        tx_hash = result.get("tx_hash", "pending")
 
-        if reasoning:
-            # Truncate reasoning for chat
-            short_reasoning = reasoning[:150] + "..." if len(reasoning) > 150 else reasoning
-            message += f"分析: {short_reasoning}"
+        message = (
+            f"{status_emoji} [AI REFEREE RESULT] "
+            f"Challenge: {challenge.description} | "
+            f"Verdict: {status_text} | "
+            f"Confidence: {confidence * 100:.0f}% | "
+            f"On-chain proof: {tx_hash}"
+        )
 
         return await self.send_message(
             channel_id=channel_id,
@@ -301,11 +310,10 @@ class KickBot:
             token: User token with chat:write scope
         """
         message = (
-            f"🎯 【新挑战已创建】\n"
-            f"挑战: {challenge.description}\n"
-            f"发起人: @{challenge.sender_username}\n"
-            f"时限: {challenge.time_limit}\n"
-            f"请开始挑战并上传视频证据！"
+            f"🎯 [NEW CHALLENGE] {challenge.description} | "
+            f"Started by: @{challenge.sender_username} | "
+            f"Time limit: {challenge.time_limit} | "
+            f"Upload your video proof when done!"
         )
 
         return await self.send_message(
@@ -324,7 +332,7 @@ class KickBot:
         """Get channel information from Kick API"""
         return await self.oauth.api_request(
             "GET",
-            f"/api/kick/public/v1/channels/{channel_id}",
+            f"/public/v1/channels/{channel_id}",
             use_app_token=use_app_token,
         )
 
@@ -336,6 +344,6 @@ class KickBot:
         """Get user information from Kick API"""
         return await self.oauth.api_request(
             "GET",
-            f"/api/kick/public/v1/users/{user_id}",
+            f"/public/v1/users/{user_id}",
             use_app_token=use_app_token,
         )
