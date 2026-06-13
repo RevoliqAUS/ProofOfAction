@@ -1,32 +1,31 @@
 # ProofOfAction
 
-**基于 AI + 区块链的 0 信任视频裁判协议，比 MrBeast 的剪辑师更诚实。**
+A zero-trust video referee protocol powered by AI and blockchain — more honest than a MrBeast editor.
 
-ProofOfAction 是一个结合了先进多模态大模型（Gemini Pro）和区块链技术（Base/Arbitrum L2 存证）的全自动视频验证预言机系统。专为如 Polymarket 这样的 Web3 预测市场设计。
+ProofOfAction is a fully automated video verification oracle system that combines advanced multimodal AI models, such as Gemini Pro, with blockchain-based notarization on Base / Arbitrum L2. It is designed for Web3 prediction markets such as Polymarket.
 
-## 🌟 核心理念与防作弊网络
-1. **真实性拦截 (AuthenticityChecker)**：严查视频底层 EXIF/XMP、GPS指纹、首帧效验。并在 AI 层专项监控“翻拍光栅效应”、烧录时间戳和反剪辑。
-2. **多模态裁判 (VideoAnalyzer)**：接入 Gemini 1.5 Pro 最新模型，通过提示词严审视频目标达成情况（如进球或挑战是否完成）。
-3. **不可篡改存证 (BlockchainNotary)**：每一次分析，平台都会提取视频内部的完全 SHA-256 哈希作为数字指纹，并通过预言机热钱包使用 **EIP-712** 协议打包判定结果 (是/否，置信度，时间戳) 签名并上链记录。
+## 🌟 Core Concept and Anti-Cheating Network
 
-## 🚀 快速启动
+1. Authenticity Interception (AuthenticityChecker)  
+   Performs strict checks on low-level video metadata, including EXIF/XMP data, GPS fingerprints, and first-frame validation. At the AI layer, it also specifically monitors for signs of “screen re-recording raster effects,” burned-in timestamps, and reverse-editing manipulation.
 
-```bash
-# 安装环境与核心依赖
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+2. Multimodal Referee (VideoAnalyzer)  
+   Integrates the latest Gemini 1.5 Pro model to evaluate whether a video successfully proves the target outcome, such as whether a goal was scored or whether a challenge was completed.
 
-# 配置环境变量 (请完善 .env 文件中的 API Key 及 Wallet Private Key)
-# 启动 API
-fastapi dev src/main.py --port 8000
-```
+3. Tamper-Proof Notarization (BlockchainNotary)  
+   For every analysis, the platform extracts a full SHA-256 hash from the video as a digital fingerprint. The oracle hot wallet then packages the judgment result — yes/no, confidence score, and timestamp — using the EIP-712 protocol, signs it, and records it on-chain.
 
-## 📖 交互文档 (Swagger UI)
+## 🚀 Quick Start
 
-如果想让您的开发团队清晰地了解或集成我们的节点逻辑，服务启动后直接访问：
-👉 `http://127.0.0.1:8000/docs`
+bash # Set up the environment and install core dependencies python3 -m venv .venv source .venv/bin/activate pip install -e .  # Configure environment variables # Please complete the API keys and wallet private key in your .env file  # Start the API fastapi dev src/main.py --port 8000 
 
-在 OpenAPI 文档中，您可以直接测试以下核心接口：
-- `GET /debug/markets`: 获取 Polymarket 上的最新视频对赌市场 (Gamma Client 集成)。
-- `POST /analyze`: 上传视频、输入对赌规则，协议会自动进行【防伪检测 -> AI多模态分析 -> 数字指纹哈希 -> EIP-712 签名及上链】的全套流程闭环，并返还附带法务背书的综合发牌结果。
+## 📖 Interactive Documentation — Swagger UI
+
+To help your development team clearly understand or integrate with our node logic, start the service and visit:
+
+👉 http://127.0.0.1:8000/docs
+
+In the OpenAPI documentation, you can directly test the following core endpoints:
+
+- GET /debug/markets: Fetch the latest video-based prediction markets from Polymarket via Gamma Client integration.
+- POST /analyze: Upload a video and enter the prediction rule. The protocol will automatically complete the full workflow: authenticity detection → AI multimodal analysis → digital fingerprint hashing → EIP-712 signing and on-chain notarization, and then return a legally defensible comprehensive judgment result.
